@@ -834,6 +834,24 @@ pub fn flush(self: *MachO, comp: *Compilation) !void {
         try self.createDsoHandleAtom();
         try self.addCodeSignatureLC();
 
+        for (self.unresolved.keys()) |index| {
+            const sym = self.undefs.items[index];
+            const sym_name = self.getString(sym.n_strx);
+            const resolv = self.symbol_resolver.get(sym.n_strx) orelse unreachable;
+
+            log.err("undefined reference to symbol '{s}'", .{sym_name});
+            if (resolv.file) |file| {
+                log.err("  first referenced in '{s}'", .{self.objects.items[file].name});
+            }
+        }
+        if (self.unresolved.count() > 0) {
+            return error.UndefinedSymbolReference;
+        }
+
+        try self.createTentativeDefAtoms();
+        try self.parseObjectsIntoAtoms();
+        try self.allocateGlobalSymbols();
+
         log.debug("locals:", .{});
         for (self.locals.items) |sym, id| {
             log.debug("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
@@ -854,23 +872,6 @@ pub fn flush(self: *MachO, comp: *Compilation) !void {
             }
         }
 
-        for (self.unresolved.keys()) |index| {
-            const sym = self.undefs.items[index];
-            const sym_name = self.getString(sym.n_strx);
-            const resolv = self.symbol_resolver.get(sym.n_strx) orelse unreachable;
-
-            log.err("undefined reference to symbol '{s}'", .{sym_name});
-            if (resolv.file) |file| {
-                log.err("  first referenced in '{s}'", .{self.objects.items[file].name});
-            }
-        }
-        if (self.unresolved.count() > 0) {
-            return error.UndefinedSymbolReference;
-        }
-
-        try self.createTentativeDefAtoms();
-        try self.parseObjectsIntoAtoms();
-        try self.allocateGlobalSymbols();
         try self.writeAtoms();
 
         if (self.bss_section_index) |idx| {
