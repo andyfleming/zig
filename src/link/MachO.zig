@@ -834,25 +834,25 @@ pub fn flush(self: *MachO, comp: *Compilation) !void {
         try self.createDsoHandleAtom();
         try self.addCodeSignatureLC();
 
-        // log.warn("locals:", .{});
-        // for (self.locals.items) |sym, id| {
-        //     log.warn("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
-        // }
-        // log.warn("globals:", .{});
-        // for (self.globals.items) |sym, id| {
-        //     log.warn("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
-        // }
-        // log.warn("undefs:", .{});
-        // for (self.undefs.items) |sym, id| {
-        //     log.warn("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
-        // }
-        // {
-        //     log.warn("resolver:", .{});
-        //     var it = self.symbol_resolver.iterator();
-        //     while (it.next()) |entry| {
-        //         log.warn("  {s} => {}", .{ self.getString(entry.key_ptr.*), entry.value_ptr.* });
-        //     }
-        // }
+        log.debug("locals:", .{});
+        for (self.locals.items) |sym, id| {
+            log.debug("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
+        }
+        log.debug("globals:", .{});
+        for (self.globals.items) |sym, id| {
+            log.debug("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
+        }
+        log.debug("undefs:", .{});
+        for (self.undefs.items) |sym, id| {
+            log.debug("  {d}: {s}: {}", .{ id, self.getString(sym.n_strx), sym });
+        }
+        {
+            log.debug("resolver:", .{});
+            var it = self.symbol_resolver.iterator();
+            while (it.next()) |entry| {
+                log.debug("  {s} => {}", .{ self.getString(entry.key_ptr.*), entry.value_ptr.* });
+            }
+        }
 
         for (self.unresolved.keys()) |index| {
             const sym = self.undefs.items[index];
@@ -1868,19 +1868,19 @@ pub fn createGotAtom(self: *MachO, target: Atom.Relocation.Target) !*Atom {
         .n_value = 0,
     });
     const atom = try self.createEmptyAtom(local_sym_index, @sizeOf(u64), 3);
+    try atom.relocs.append(self.base.allocator, .{
+        .offset = 0,
+        .target = target,
+        .payload = .{
+            .unsigned = .{
+                .subtractor = null,
+                .addend = 0,
+                .is_64bit = true,
+            },
+        },
+    });
     switch (target) {
         .local => {
-            try atom.relocs.append(self.base.allocator, .{
-                .offset = 0,
-                .target = target,
-                .payload = .{
-                    .unsigned = .{
-                        .subtractor = null,
-                        .addend = 0,
-                        .is_64bit = true,
-                    },
-                },
-            });
             try atom.rebases.append(self.base.allocator, 0);
         },
         .global => |n_strx| {

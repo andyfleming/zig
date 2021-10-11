@@ -676,9 +676,15 @@ fn initRelocFromObject(rel: macho.relocation_info, context: RelocContext) !Reloc
             const seg = context.object.load_commands.items[context.object.segment_cmd_index.?].Segment;
             const sect = seg.sections.items[sect_id];
             const match = (try context.macho_file.getMatchingSection(sect)) orelse unreachable;
+            const sym_name = try std.fmt.allocPrint(context.allocator, "{s}_{s}_{s}", .{
+                context.object.name,
+                commands.segmentName(sect),
+                commands.sectionName(sect),
+            });
+            defer context.allocator.free(sym_name);
             const local_sym_index = @intCast(u32, context.macho_file.locals.items.len);
             try context.macho_file.locals.append(context.allocator, .{
-                .n_strx = 0,
+                .n_strx = try context.macho_file.makeString(sym_name),
                 .n_type = macho.N_SECT,
                 .n_sect = @intCast(u8, context.macho_file.section_ordinals.getIndex(match).? + 1),
                 .n_desc = 0,
@@ -1230,24 +1236,20 @@ pub fn resolveRelocs(self: *Atom, macho_file: *MachO) !void {
                     break :blk sym.n_value;
                 },
                 .global => |n_strx| {
-                    const atom = macho_file.stubs_map.get(n_strx) orelse {
-                        // TODO this is required for incremental when we don't have every symbol
-                        // resolved when creating relocations. In this case, we will insert a branch
-                        // reloc to an undef symbol which may happen to be defined within the binary.
-                        // Then, the undef we point at will be a null symbol (free symbol) which we
-                        // should remove/repurpose. To circumvent this (for now), we check if the symbol
-                        // we point to is garbage, and if so we fall back to symbol resolver to find by name.
-                        // const n_strx = macho_file.undefs.items[rel.where_index].n_strx;
-                        // if (macho_file.symbol_resolver.get(n_strx)) |resolv| inner: {
-                        //     if (resolv.where != .global) break :inner;
-                        //     break :blk macho_file.globals.items[resolv.where_index].n_value;
-                        // }
-
-                        // TODO verify in TextBlock that the symbol is indeed dynamically bound.
-                        break :blk 0; // Dynamically bound by dyld.
-                    };
-
-                    break :blk macho_file.locals.items[atom.local_sym_index].n_value;
+                    // TODO Still trying to figure out how to possibly use stubs for local symbol indirection with
+                    // branching instructions. If it is not possible, then the best course of action is to
+                    // resurrect the former approach of defering creating synthethic atoms in __got and __la_symbol_ptr
+                    // sections until we resolve the relocations.
+                    const resolv = macho_file.symbol_resolver.get(n_strx).?;
+                    switch (resolv.where) {
+                        .global => break :blk macho_file.globals.items[resolv.where_index].n_value,
+                        .undef => {
+                            break :blk if (macho_file.stubs_map.get(n_strx)) |atom|
+                                macho_file.locals.items[atom.local_sym_index].n_value
+                            else
+                                0;
+                        },
+                    }
                 },
             }
         };
