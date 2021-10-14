@@ -5005,6 +5005,13 @@ pub fn addCases(ctx: *TestContext) !void {
         "tmp.zig:1:23: error: unable to load '${DIR}bogus-does-not-exist.zig': FileNotFound",
     });
 
+
+    ctx.objErrStage1("bad import from package",
+        \\const bogus = @import("bogus-does-not-exist",);
+    , &[_][]const u8{
+        "tmp.zig:1:23:error: no package named 'bogus-does-not-exist' available within package 'root'",
+    });
+
     ctx.objErrStage1("undeclared identifier",
         \\export fn a() void {
         \\    return
